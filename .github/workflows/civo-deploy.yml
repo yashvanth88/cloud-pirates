@@ -50,8 +50,15 @@ jobs:
 
       - name: Install civo CLI
         run: |
-          curl -fsSL https://github.com/civo/cli/releases/download/v0.7.30/civo_0.7.30_linux_amd64.tar.gz | tar xz
-          sudo mv civo /usr/local/bin/civo
+          set -euo pipefail
+          URL="https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz"
+          OUT="/tmp/civo.tar.gz"
+          echo "Downloading civo CLI from $URL"
+          curl -L --retry 3 --fail -o "$OUT" "$URL"
+          echo "Downloaded file info:"; file "$OUT" || true
+          tar -xzf "$OUT" -C /tmp
+          sudo mv /tmp/civo /usr/local/bin/civo
+          sudo chmod +x /usr/local/bin/civo
 
       - name: Authenticate Civo
         env:
