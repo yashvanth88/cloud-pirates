@@ -38,7 +38,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates:${{ github.sha }}
           file: ./backend/Dockerfile
-          context: .
+          context: ./backend
           outputs: type=registry
 
   deploy-to-civo:
