@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pirates-frontend
+  labels:
+    app: pirates-frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: pirates-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pirates-frontend
+  labels:
+    app: pirates-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pirates-frontend
+  template:
+    metadata:
+      labels:
+        app: pirates-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/YOUR_GH_USER/cloud-pirates-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_URL
+              value: "http://pirates-backend"

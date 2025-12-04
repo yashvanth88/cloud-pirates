@@ -1,0 +1,122 @@
+name: CI / Build & Deploy to Civo
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      backend-image: ${{ steps.set-backend-out.outputs.image }}
+      frontend-image: ${{ steps.set-frontend-out.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+
+      - name: Build and push backend image
+        id: backend-build
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}
+
+      - name: Build and push frontend image
+        id: frontend-build
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}
+
+      - name: Set outputs
+        id: set-backend-out
+        run: |
+          echo "backend_img=${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}" >> $GITHUB_OUTPUT
+      - name: Set frontend output
+        id: set-frontend-out
+        run: |
+          echo "frontend_img=${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install civo CLI
+        run: |
+          curl -sL https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo mv /tmp/civo /usr/local/bin/civo
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Save kubeconfig (Civo)
+        env:
+          CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
+        run: |
+          set -e
+          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save ${{ secrets.CIVO_CLUSTER_NAME }} --dir ~/.kube --overwrite
+          export KUBECONFIG=~/.kube/config
+          kubectl version --client
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+
+      - name: Ensure Postgres (Helm Bitnami)
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami || true
+          helm upgrade --install pirates-postgres bitnami/postgresql --namespace default --set global.postgresql.auth.postgresPassword="password"
+
+      - name: Ensure Redis (Helm Bitnami)
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami || true
+          helm upgrade --install pirates-redis bitnami/redis --namespace default --set usePassword=false
+
+      - name: Apply k8s manifests
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          kubectl apply -f k8s/minio-deployment.yaml || true
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl apply -f k8s/frontend-deployment.yaml
+
+      - name: Patch backend/frontend images
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          BACKEND_IMG=${{ needs.build-and-push.outputs.backend-image }}
+          FRONTEND_IMG=${{ needs.build-and-push.outputs.frontend-image }}
+          kubectl set image deployment/pirates-backend backend=${BACKEND_IMG} --record || true
+          kubectl set image deployment/pirates-frontend frontend=${FRONTEND_IMG} --record || true
+
+      - name: Wait for rollout and print endpoints
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          kubectl rollout status deployment/pirates-backend --timeout=120s
+          kubectl rollout status deployment/pirates-frontend --timeout=120s
+          echo "Backend service:";
+          kubectl get svc pirates-backend -o wide
+          echo "Frontend service:";
+          kubectl get svc pirates-frontend -o wide

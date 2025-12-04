@@ -1,0 +1,15 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cloud-pirates-migrate
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: <YOUR_REGISTRY>/cloud-pirates:latest
+          command: ["node", "backend/migrate.js"]
+          envFrom:
+            - secretRef:
+                name: cloud-pirates-secrets
+      restartPolicy: OnFailure

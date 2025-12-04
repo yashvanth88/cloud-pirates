@@ -1,0 +1,3 @@
+Local dev backend (SQLite) running on 8080
+Postgres-style schema failed on SQLite, applying fallback SQLite schema. Error: SQLITE_ERROR: near "(": syntax error
+Fallback SQLite schema ensured

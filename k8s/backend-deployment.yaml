@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pirates-backend
+  labels:
+    app: pirates-backend
+spec:
+  type: LoadBalancer
+  selector:
+    app: pirates-backend
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pirates-backend
+  labels:
+    app: pirates-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pirates-backend
+  template:
+    metadata:
+      labels:
+        app: pirates-backend
+    spec:
+      containers:
+        - name: backend
+          # Replace the image below with the image you push to your registry
+          image: ghcr.io/YOUR_GH_USER/cloud-pirates-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: pirates-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20

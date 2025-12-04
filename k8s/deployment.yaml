@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-pirates-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloud-pirates-web
+  template:
+    metadata:
+      labels:
+        app: cloud-pirates-web
+    spec:
+      containers:
+        - name: web
+          image: <YOUR_REGISTRY>/cloud-pirates:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: cloud-pirates-secrets
+          volumeMounts:
+            - name: uploads
+              mountPath: /Users/yashvanth/Desktop/pirates/cloud-pirates/backend/uploads
+      volumes:
+        - name: uploads
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud-pirates-web
+spec:
+  selector:
+    app: cloud-pirates-web
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-pirates-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloud-pirates-worker
+  template:
+    metadata:
+      labels:
+        app: cloud-pirates-worker
+    spec:
+      containers:
+        - name: worker
+          image: <YOUR_REGISTRY>/cloud-pirates:latest
+          imagePullPolicy: IfNotPresent
+          command: [ "node", "backend/worker.js" ]
+          envFrom:
+            - secretRef:
+                name: cloud-pirates-secrets

@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "emr_source_1",
+      "type": "default",
+      "position": { "x": 100, "y": 120 },
+      "data": { "label": "EMR Source", "config": { "mode": "select-emr" } }
+    },
+    {
+      "id": "upload_1",
+      "type": "default",
+      "position": { "x": 360, "y": 120 },
+      "data": { "label": "Scan Upload", "config": { "accept": ["image/png","image/jpeg"] } }
+    },
+    {
+      "id": "ai_1",
+      "type": "default",
+      "position": { "x": 620, "y": 120 },
+      "data": { "label": "AI Model", "config": { "inference_url": "", "threshold": 0.7 } }
+    },
+    {
+      "id": "notify_1",
+      "type": "default",
+      "position": { "x": 880, "y": 120 },
+      "data": { "label": "Notify", "config": { "channel": "log", "to": "radiology@hospital.org" } }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "emr_source_1", "target": "upload_1" },
+    { "id": "e2", "source": "upload_1", "target": "ai_1" },
+    { "id": "e3", "source": "ai_1", "target": "notify_1" }
+  ]
+}

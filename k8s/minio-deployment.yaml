@@ -1,0 +1,86 @@
+# Minimal in-cluster MinIO deployment for Civo (single-replica)
+# - Uses `emptyDir` by default (ephemeral) which avoids PVC/CSI issues.
+# - If you have working StorageClass and want persistence, uncomment the PVC
+#   section at the bottom and replace the `emptyDir` volume with the PVC.
+
+<!-- Secret is intentionally excluded here to avoid overwriting cluster secrets. -->
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pirates-minio
+  labels:
+    app: pirates-minio
+spec:
+  selector:
+    app: pirates-minio
+  ports:
+    - port: 9000
+      targetPort: 9000
+      name: http
+    - port: 9001
+      targetPort: 9001
+      name: console
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pirates-minio
+  labels:
+    app: pirates-minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pirates-minio
+  template:
+    metadata:
+      labels:
+        app: pirates-minio
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: pirates-minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pirates-minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+
+---
+# Optional: PersistentVolumeClaim for data (uncomment and use if you have a working
+# StorageClass and want persistent storage). Then replace the `emptyDir` volume
+# above with the PVC (change the `volumes` block accordingly).
+#
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: pirates-minio-pvc
+# spec:
+#   accessModes:
+#     - ReadWriteOnce
+#   resources:
+#     requests:
+#       storage: 10Gi
+#   storageClassName: civo-volume
