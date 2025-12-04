@@ -79,24 +79,53 @@ jobs:
       - name: Ensure Kubernetes cluster
         env:
           CLUSTER_NAME: cloud-pirates-cluster
+          CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
         run: |
+          set -euo pipefail
           if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
             civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g4s.kube.small
           fi
-          # Save kubeconfig for the cluster. Different civo CLI versions
-          # may either write a file named kubeconfig-<name>.yaml or print
-          # to stdout; try the save command then move the file if present.
-          # Try saving kubeconfig to a temp file (some civo CLI versions
-          # print to stdout), then fall back to moving a named file if present.
-          civo kubernetes kubeconfig save $CLUSTER_NAME > /tmp/kubeconfig 2>/dev/null || true
-          if [ -s "/tmp/kubeconfig" ]; then
-            mkdir -p $HOME/.kube
-            mv /tmp/kubeconfig $HOME/.kube/config
+          
+          # Fetch kubeconfig directly via Civo API
+          echo "Fetching cluster list from Civo API"
+          curl -s -H "Authorization: Bearer $CIVO_API_KEY" "https://api.civo.com/v2/kubernetes" -o /tmp/civo-clusters.json
+          
+          CLUSTER_ID=$(python3 - <<'PY'
+import json,sys
+try:
+    data=json.load(open('/tmp/civo-clusters.json'))
+except Exception as e:
+    print(f"Error loading JSON: {e}", file=sys.stderr)
+    sys.exit(1)
+arr=data.get('items') or data.get('kubernetes_clusters') or []
+if isinstance(data, list):
+    arr=data
+for c in arr:
+    if c.get('name') == sys.argv[1]:
+        print(c.get('id') or c.get('cluster_id') or '')
+        sys.exit(0)
+sys.exit(1)
+PY
+"$CLUSTER_NAME")
+          
+          if [ -z "$CLUSTER_ID" ]; then
+            echo "ERROR: Could not find cluster ID for $CLUSTER_NAME" >&2
+            exit 1
           fi
-          if [ -f "kubeconfig-$CLUSTER_NAME.yaml" ]; then
-            mkdir -p $HOME/.kube
-            mv "kubeconfig-$CLUSTER_NAME.yaml" $HOME/.kube/config
+          
+          echo "Found cluster ID: $CLUSTER_ID"
+          echo "Fetching kubeconfig from Civo API"
+          curl -s -H "Authorization: Bearer $CIVO_API_KEY" "https://api.civo.com/v2/kubernetes/$CLUSTER_ID/kubeconfig" -o /tmp/kubeconfig-api
+          
+          if [ ! -s /tmp/kubeconfig-api ]; then
+            echo "ERROR: Civo API did not return kubeconfig" >&2
+            exit 1
           fi
+          
+          mkdir -p $HOME/.kube
+          mv /tmp/kubeconfig-api $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          echo "Successfully saved kubeconfig to $HOME/.kube/config"
           export KUBECONFIG=$HOME/.kube/config
 
       - name: Configure kubectl
