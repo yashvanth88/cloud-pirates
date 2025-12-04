@@ -83,9 +83,8 @@ jobs:
           if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
             civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g4s.kube.small
           fi
-          civo kubernetes config $CLUSTER_NAME --save --local
-          mkdir -p $HOME/.kube
-          mv kubeconfig-$CLUSTER_NAME.yaml $HOME/.kube/config
+          civo kubernetes kubeconfig save $CLUSTER_NAME --dir ~/.kube --overwrite
+          export KUBECONFIG=~/.kube/config
 
       - name: Configure kubectl
         run: kubectl version --client
