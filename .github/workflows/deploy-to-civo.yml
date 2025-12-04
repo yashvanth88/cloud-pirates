@@ -61,10 +61,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install civo CLI
+      - name: Install civo CLI (robust download)
         run: |
-          curl -sL https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz | tar xz -C /tmp
+          set -euo pipefail
+          URL="https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz"
+          OUT="/tmp/civo.tar.gz"
+          echo "Downloading civo CLI from $URL"
+          curl -L --retry 3 --fail -o "$OUT" "$URL"
+          echo "Downloaded file info:"; file "$OUT" || true
+          tar -xzf "$OUT" -C /tmp
           sudo mv /tmp/civo /usr/local/bin/civo
+          sudo chmod +x /usr/local/bin/civo
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
