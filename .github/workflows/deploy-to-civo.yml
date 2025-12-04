@@ -1,4 +1,4 @@
-name: CI / Build & Deploy to Civo
+name: CI/CD Deploy to Civo
 
 on:
   push:
@@ -7,23 +7,14 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      backend-image: ${{ steps.set-backend-out.outputs.image }}
-      frontend-image: ${{ steps.set-frontend-out.outputs.image }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
-      - name: Debug: show backend files
-        run: |
-          echo "Listing backend directory"
-          ls -la backend || true
-          echo "Listing repo root"
-          ls -la || true
-
-      - name: Set up Docker Buildx
+      - name: Set up buildx
         uses: docker/setup-buildx-action@v2
 
       - name: Log in to registry
@@ -33,50 +24,39 @@ jobs:
           username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
           password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
 
-      - name: Build and push backend image
-        id: backend-build
+      - name: Build and push backend
         uses: docker/build-push-action@v4
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}
+          tags: "${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}"
 
-      - name: Build and push frontend image
-        id: frontend-build
+      - name: Build and push frontend
         uses: docker/build-push-action@v4
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}
-
-      - name: Set outputs
-        id: set-backend-out
-        run: |
-          echo "backend_img=${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}" >> $GITHUB_OUTPUT
-      - name: Set frontend output
-        id: set-frontend-out
-        run: |
-          echo "frontend_img=${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          tags: "${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}"
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install civo CLI (robust download)
+      - name: Install civo CLI
         run: |
           set -euo pipefail
-          URL="https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz"
-          OUT="/tmp/civo.tar.gz"
-          echo "Downloading civo CLI from $URL"
-          curl -L --retry 3 --fail -o "$OUT" "$URL"
-          echo "Downloaded file info:"; file "$OUT" || true
-          tar -xzf "$OUT" -C /tmp
+          ASSET_URL=$(curl -s "https://api.github.com/repos/civo/cli/releases/latest" | grep "browser_download_url" | grep -i "linux" | grep -i "amd64" | head -n1 | cut -d '"' -f4)
+          if [ -z "$ASSET_URL" ]; then
+            echo "civo asset not found" >&2
+            exit 1
+          fi
+          curl -L --retry 3 --fail -o /tmp/civo.tar.gz "$ASSET_URL"
+          tar -xzf /tmp/civo.tar.gz -C /tmp
           sudo mv /tmp/civo /usr/local/bin/civo
           sudo chmod +x /usr/local/bin/civo
 
@@ -85,52 +65,39 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Save kubeconfig (Civo)
+      - name: Save kubeconfig
         env:
           CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
+          CLUSTER_NAME: ${{ secrets.CIVO_CLUSTER_NAME }}
         run: |
-          set -e
-          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save ${{ secrets.CIVO_CLUSTER_NAME }} --dir ~/.kube --overwrite
-          export KUBECONFIG=~/.kube/config
-          kubectl version --client
+          set -euo pipefail
+          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save "$CLUSTER_NAME" > /tmp/kubeconfig 2>/dev/null || true
+          if [ -s /tmp/kubeconfig ]; then
+            mkdir -p $HOME/.kube
+            mv /tmp/kubeconfig $HOME/.kube/config
+          fi
+          if [ -f "kubeconfig-$CLUSTER_NAME.yaml" ]; then
+            mkdir -p $HOME/.kube
+            mv "kubeconfig-$CLUSTER_NAME.yaml" $HOME/.kube/config
+          fi
+          export KUBECONFIG=$HOME/.kube/config
+          echo "---- KUBECONFIG (first 20 lines) ----"
+          sed -n '1,20p' $KUBECONFIG || true
+          kubectl --kubeconfig=$KUBECONFIG version --client || true
+          kubectl --kubeconfig=$KUBECONFIG cluster-info || true
 
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-
-      - name: Ensure Postgres (Helm Bitnami)
-        run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami || true
-          helm upgrade --install pirates-postgres bitnami/postgresql --namespace default --set global.postgresql.auth.postgresPassword="password"
-
-      - name: Ensure Redis (Helm Bitnami)
-        run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami || true
-          helm upgrade --install pirates-redis bitnami/redis --namespace default --set usePassword=false
-
-      - name: Apply k8s manifests
+      - name: Apply manifests and patch images
         env:
-          KUBECONFIG: ~/.kube/config
+          KUBECONFIG: ${{ env.HOME }}/.kube/config
+          BACKEND_IMG: "${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}"
+          FRONTEND_IMG: "${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}"
         run: |
+          set -euo pipefail
           kubectl apply -f k8s/minio-deployment.yaml || true
           kubectl apply -f k8s/backend-deployment.yaml
           kubectl apply -f k8s/frontend-deployment.yaml
-
-      - name: Patch backend/frontend images
-        env:
-          KUBECONFIG: ~/.kube/config
-        run: |
-          BACKEND_IMG=${{ needs.build-and-push.outputs.backend-image }}
-          FRONTEND_IMG=${{ needs.build-and-push.outputs.frontend-image }}
-          kubectl set image deployment/pirates-backend backend=${BACKEND_IMG} --record || true
-          kubectl set image deployment/pirates-frontend frontend=${FRONTEND_IMG} --record || true
-
-      - name: Wait for rollout and print endpoints
-        env:
-          KUBECONFIG: ~/.kube/config
-        run: |
-          kubectl rollout status deployment/pirates-backend --timeout=120s
-          kubectl rollout status deployment/pirates-frontend --timeout=120s
-          echo "Backend service:";
-          kubectl get svc pirates-backend -o wide
-          echo "Frontend service:";
-          kubectl get svc pirates-frontend -o wide
+          kubectl set image deployment/pirates-backend backend=$BACKEND_IMG --record || true
+          kubectl set image deployment/pirates-frontend frontend=$FRONTEND_IMG --record || true
+          kubectl rollout status deployment/pirates-backend --timeout=120s || true
+          kubectl rollout status deployment/pirates-frontend --timeout=120s || true
+          kubectl get svc pirates-frontend -o wide || true
