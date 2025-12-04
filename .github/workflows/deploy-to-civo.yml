@@ -16,6 +16,13 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
+      - name: Debug: show backend files
+        run: |
+          echo "Listing backend directory"
+          ls -la backend || true
+          echo "Listing repo root"
+          ls -la || true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -30,8 +37,8 @@ jobs:
         id: backend-build
         uses: docker/build-push-action@v4
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: backend
+          file: backend/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}
@@ -40,8 +47,8 @@ jobs:
         id: frontend-build
         uses: docker/build-push-action@v4
         with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
+          context: frontend
+          file: frontend/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}
