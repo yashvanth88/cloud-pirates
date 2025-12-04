@@ -37,8 +37,8 @@ jobs:
         id: backend-build
         uses: docker/build-push-action@v4
         with:
-          context: .
-          file: backend/Dockerfile
+          context: ./backend
+          file: ./backend/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-backend:main-${{ github.run_number }}
@@ -47,8 +47,8 @@ jobs:
         id: frontend-build
         uses: docker/build-push-action@v4
         with:
-          context: .
-          file: frontend/Dockerfile
+          context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_REGISTRY_HOST || 'ghcr.io' }}/${{ secrets.REGISTRY_OWNER || github.repository_owner }}/cloud-pirates-frontend:main-${{ github.run_number }}
