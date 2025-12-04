@@ -51,10 +51,20 @@ jobs:
       - name: Install civo CLI
         run: |
           set -euo pipefail
-          URL="https://github.com/civo/cli/releases/latest/download/civo-linux-amd64.tar.gz"
+          echo "Looking up latest civo CLI release asset via GitHub API"
+          ASSET_URL=$(curl -s "https://api.github.com/repos/civo/cli/releases/latest" \
+            | grep "browser_download_url" \
+            | grep -i "linux" \
+            | grep -i "amd64" \
+            | head -n1 \
+            | cut -d '"' -f4)
+          if [ -z "$ASSET_URL" ]; then
+            echo "Could not find linux/amd64 asset URL for civo CLI" >&2
+            exit 1
+          fi
+          echo "Found asset: $ASSET_URL"
           OUT="/tmp/civo.tar.gz"
-          echo "Downloading civo CLI from $URL"
-          curl -L --retry 3 --fail -o "$OUT" "$URL"
+          curl -L --retry 3 --fail -o "$OUT" "$ASSET_URL"
           echo "Downloaded file info:"; file "$OUT" || true
           tar -xzf "$OUT" -C /tmp
           sudo mv /tmp/civo /usr/local/bin/civo
