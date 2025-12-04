@@ -71,7 +71,12 @@ jobs:
           CLUSTER_NAME: ${{ secrets.CIVO_CLUSTER_NAME }}
         run: |
           set -euo pipefail
+          # Try the newer 'kubeconfig save' first; fall back to 'config show' which
+          # exists on other civo CLI versions and prints kubeconfig to stdout.
           civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save "$CLUSTER_NAME" > /tmp/kubeconfig 2>/dev/null || true
+          if [ ! -s /tmp/kubeconfig ]; then
+            civo --access-token "$CIVO_API_KEY" kubernetes config show "$CLUSTER_NAME" > /tmp/kubeconfig 2>/dev/null || true
+          fi
           if [ -s /tmp/kubeconfig ]; then
             mkdir -p $HOME/.kube
             mv /tmp/kubeconfig $HOME/.kube/config
