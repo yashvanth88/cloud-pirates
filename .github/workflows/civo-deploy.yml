@@ -81,7 +81,7 @@ jobs:
           CLUSTER_NAME: cloud-pirates-cluster
         run: |
           if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
-            civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g3.k3s.medium
+            civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g4s.kube.small
           fi
           civo kubernetes config $CLUSTER_NAME --save --local
           mkdir -p $HOME/.kube
