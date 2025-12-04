@@ -71,25 +71,160 @@ jobs:
           CLUSTER_NAME: ${{ secrets.CIVO_CLUSTER_NAME }}
         run: |
           set -euo pipefail
-          # Try the newer 'kubeconfig save' first; fall back to 'config show' which
-          # exists on other civo CLI versions and prints kubeconfig to stdout.
-          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save "$CLUSTER_NAME" > /tmp/kubeconfig 2>/dev/null || true
-          if [ ! -s /tmp/kubeconfig ]; then
-            civo --access-token "$CIVO_API_KEY" kubernetes config show "$CLUSTER_NAME" > /tmp/kubeconfig 2>/dev/null || true
-          fi
-          if [ -s /tmp/kubeconfig ]; then
-            mkdir -p $HOME/.kube
-            mv /tmp/kubeconfig $HOME/.kube/config
-          fi
+          # Provide diagnostics for the civo CLI and attempt multiple kubeconfig
+          # retrieval commands across different CLI versions. Capture outputs to
+          # /tmp so we can inspect them in CI logs.
+          civo version || civo --version || true
+          echo "--- civo kubernetes help ---"
+          civo kubernetes --help || true
+
+          # Try a variety of candidate commands and capture their stdout/stderr.
+          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig save "$CLUSTER_NAME" > /tmp/kubeconfig-save 2>&1 || true
+          civo --access-token "$CIVO_API_KEY" kubernetes config show "$CLUSTER_NAME" > /tmp/kubeconfig-config-show 2>&1 || true
+          civo --access-token "$CIVO_API_KEY" kubernetes update-kubeconfig "$CLUSTER_NAME" > /tmp/kubeconfig-update 2>&1 || true
+          civo --access-token "$CIVO_API_KEY" kubernetes kubeconfig "$CLUSTER_NAME" > /tmp/kubeconfig-kubeconfig 2>&1 || true
+          civo --access-token "$CIVO_API_KEY" kubeconfig show "$CLUSTER_NAME" > /tmp/kubeconfig-topkube 2>&1 || true
+
+          echo "--- /tmp listing ---"
+          ls -la /tmp || true
+          ls -la $HOME || true
+          ls -la $HOME/.kube || true
+
+          # Inspect any candidate files and move the first valid-looking kubeconfig
+          # into place for kubectl to use.
+          for f in /tmp/kubeconfig-*; do
+            [ -e "$f" ] || continue
+            echo "--- file: $f (size=$(stat -c%s "$f" 2>/dev/null || echo '-') ) ---"
+            sed -n '1,60p' "$f" || true
+            if grep -q "apiVersion" "$f" 2>/dev/null || grep -q "clusters:" "$f" 2>/dev/null; then
+              mkdir -p $HOME/.kube
+              cp "$f" $HOME/.kube/config
+              echo "Moved $f to $HOME/.kube/config"
+              break
+            fi
+          done
+
+          # Old-style file naming sometimes used by the CLI
           if [ -f "kubeconfig-$CLUSTER_NAME.yaml" ]; then
             mkdir -p $HOME/.kube
             mv "kubeconfig-$CLUSTER_NAME.yaml" $HOME/.kube/config
+            echo "Moved kubeconfig-$CLUSTER_NAME.yaml to $HOME/.kube/config"
           fi
+
           export KUBECONFIG=$HOME/.kube/config
           echo "---- KUBECONFIG (first 20 lines) ----"
           sed -n '1,20p' $KUBECONFIG || true
           kubectl --kubeconfig=$KUBECONFIG version --client || true
           kubectl --kubeconfig=$KUBECONFIG cluster-info || true
+
+      - name: Fetch kubeconfig via Civo API (fallback)
+        if: always()
+        env:
+          CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
+          CLUSTER_NAME: ${{ secrets.CIVO_CLUSTER_NAME }}
+        run: |
+          set -euo pipefail
+          # If we already have a kubeconfig, skip
+          if [ -s "$HOME/.kube/config" ]; then
+            echo "kubeconfig already present; skipping API fetch"
+            exit 0
+          fi
+
+          echo "Attempting to fetch kubeconfig via Civo REST API"
+          # Try to get cluster list via civo CLI (if available) to find the ID, fallback to API list
+          CLUSTER_ID=""
+          if command -v civo >/dev/null 2>&1; then
+            civo --access-token "$CIVO_API_KEY" kubernetes list --format json > /tmp/civo-clusters.json 2>/dev/null || true
+          else
+            curl -s -H "Authorization: Bearer $CIVO_API_KEY" "https://api.civo.com/v2/kubernetes" -o /tmp/civo-clusters.json || true
+          fi
+
+          CLUSTER_ID=$(python3 - <<'PY'
+import json,sys
+try:
+    data=json.load(open('/tmp/civo-clusters.json'))
+except Exception:
+    sys.exit(0)
+arr=None
+if isinstance(data, list):
+    arr=data
+elif isinstance(data, dict):
+    for k in ('kubernetes_clusters','items','clusters'):
+        if k in data and isinstance(data[k], list):
+            arr=data[k]
+            break
+    if arr is None:
+        # try common key
+        for v in data.values():
+            if isinstance(v, list):
+                arr=v
+                break
+if not arr:
+    sys.exit(0)
+name=sys.argv[1]
+for c in arr:
+    if c.get('name')==name or c.get('cluster_name')==name:
+        print(c.get('id') or c.get('uuid') or c.get('cluster_id') or c.get('kubernetes_id') or '')
+        sys.exit(0)
+sys.exit(0)
+PY
+"$CLUSTER_NAME")
+
+          if [ -z "$CLUSTER_ID" ]; then
+            echo "Cluster ID not found from list; attempting to find by name via API search"
+            # Some API variants may return a paged list; try direct name lookup (not guaranteed)
+            # Fallback: try GET /v2/kubernetes?name=...
+            curl -s -G -H "Authorization: Bearer $CIVO_API_KEY" --data-urlencode "name=$CLUSTER_NAME" "https://api.civo.com/v2/kubernetes" -o /tmp/civo-clusters-filtered.json || true
+            CLUSTER_ID=$(python3 - <<'PY'
+import json,sys
+try:
+    data=json.load(open('/tmp/civo-clusters-filtered.json'))
+except Exception:
+    sys.exit(0)
+arr=data if isinstance(data,list) else data.get('kubernetes_clusters') or data.get('items') or []
+for c in arr:
+    if c.get('name')==sys.argv[1]:
+        print(c.get('id') or c.get('uuid') or '')
+        sys.exit(0)
+sys.exit(0)
+PY
+"$CLUSTER_NAME")
+          fi
+
+          if [ -z "$CLUSTER_ID" ]; then
+            echo "Could not determine cluster ID; aborting API fetch" >&2
+            exit 0
+          fi
+
+          echo "Found cluster ID: $CLUSTER_ID"
+          # Fetch kubeconfig from API endpoint
+          curl -s -H "Authorization: Bearer $CIVO_API_KEY" "https://api.civo.com/v2/kubernetes/$CLUSTER_ID/kubeconfig" -o /tmp/kubeconfig-api || true
+          if [ -s /tmp/kubeconfig-api ]; then
+            echo "API kubeconfig fetched; validating"
+            sed -n '1,40p' /tmp/kubeconfig-api || true
+            if grep -q "apiVersion" /tmp/kubeconfig-api 2>/dev/null || grep -q "clusters:" /tmp/kubeconfig-api 2>/dev/null; then
+              mkdir -p $HOME/.kube
+              mv /tmp/kubeconfig-api $HOME/.kube/config
+              chmod 600 $HOME/.kube/config || true
+              echo "Wrote $HOME/.kube/config from Civo API"
+            else
+              echo "API returned data but it does not look like a kubeconfig" >&2
+            fi
+          else
+            echo "No kubeconfig returned from Civo API" >&2
+          fi
+
+      - name: Upload kubeconfig diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeconfig-diagnostics-${{ github.run_id }}
+          path: |
+            /tmp/kubeconfig-*
+            /tmp/*kubeconfig*
+            /tmp/civo*
+            $HOME/.kube/config
+        continue-on-error: true
 
       - name: Apply manifests and patch images
         env:
