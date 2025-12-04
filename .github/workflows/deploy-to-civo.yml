@@ -37,7 +37,7 @@ jobs:
         id: backend-build
         uses: docker/build-push-action@v4
         with:
-          context: backend
+          context: .
           file: backend/Dockerfile
           push: true
           tags: |
@@ -47,7 +47,7 @@ jobs:
         id: frontend-build
         uses: docker/build-push-action@v4
         with:
-          context: frontend
+          context: .
           file: frontend/Dockerfile
           push: true
           tags: |
