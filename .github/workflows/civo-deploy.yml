@@ -86,12 +86,18 @@ jobs:
           # Save kubeconfig for the cluster. Different civo CLI versions
           # may either write a file named kubeconfig-<name>.yaml or print
           # to stdout; try the save command then move the file if present.
-          civo kubernetes kubeconfig save $CLUSTER_NAME || true
+          # Try saving kubeconfig to a temp file (some civo CLI versions
+          # print to stdout), then fall back to moving a named file if present.
+          civo kubernetes kubeconfig save $CLUSTER_NAME > /tmp/kubeconfig 2>/dev/null || true
+          if [ -s "/tmp/kubeconfig" ]; then
+            mkdir -p $HOME/.kube
+            mv /tmp/kubeconfig $HOME/.kube/config
+          fi
           if [ -f "kubeconfig-$CLUSTER_NAME.yaml" ]; then
             mkdir -p $HOME/.kube
             mv "kubeconfig-$CLUSTER_NAME.yaml" $HOME/.kube/config
           fi
-          export KUBECONFIG=$HOME/.kube/config || true
+          export KUBECONFIG=$HOME/.kube/config
 
       - name: Configure kubectl
         run: kubectl version --client
@@ -106,14 +112,22 @@ jobs:
           INFERENCE_URL: ${{ secrets.INFERENCE_URL }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
-          kubectl create secret generic cloud-pirates-secrets \
+          KUBECONFIG_PATH="$HOME/.kube/config"
+          if [ ! -s "$KUBECONFIG_PATH" ]; then
+            echo "ERROR: kubeconfig not found at $KUBECONFIG_PATH. Cannot create secrets or deploy." >&2
+            echo "Dumping /home/runner/.kube listing for debugging:" || true
+            ls -la "$HOME/.kube" || true
+            exit 1
+          fi
+
+          kubectl --kubeconfig="$KUBECONFIG_PATH" create secret generic cloud-pirates-secrets \
             --from-literal=DATABASE_URL="$DATABASE_URL" \
             --from-literal=SPACES_ENDPOINT="$SPACES_ENDPOINT" \
             --from-literal=SPACES_KEY="$SPACES_KEY" \
             --from-literal=SPACES_SECRET="$SPACES_SECRET" \
             --from-literal=SPACES_BUCKET="$SPACES_BUCKET" \
             --from-literal=INFERENCE_URL="$INFERENCE_URL" \
-            --from-literal=REDIS_URL="$REDIS_URL" --dry-run=client -o yaml | kubectl apply -f -
+            --from-literal=REDIS_URL="$REDIS_URL" --dry-run=client -o yaml | kubectl --kubeconfig="$KUBECONFIG_PATH" apply -f -
 
       - name: Deploy to cluster
         env:
