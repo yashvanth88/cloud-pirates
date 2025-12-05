@@ -154,3 +154,24 @@ jobs:
         run: |
           kubectl rollout status deployment/cloud-pirates-web --timeout=120s || true
           kubectl rollout status deployment/cloud-pirates-worker --timeout=120s || true
+
+      - name: Get service URL
+        run: |
+          echo "Waiting for LoadBalancer IP..."
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get svc cloud-pirates-web -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$EXTERNAL_IP" ] && [ "$EXTERNAL_IP" != "<pending>" ]; then
+              echo "=========================================="
+              echo "🚀 DEPLOYMENT SUCCESSFUL!"
+              echo "=========================================="
+              echo "Frontend URL: http://$EXTERNAL_IP"
+              echo "=========================================="
+              kubectl get svc cloud-pirates-web
+              exit 0
+            fi
+            echo "Waiting for external IP... (attempt $i/30)"
+            sleep 10
+          done
+          echo "⚠️  Deployment succeeded but external IP not yet assigned"
+          echo "Run: kubectl get svc cloud-pirates-web"
+          kubectl get svc cloud-pirates-web || true
