@@ -99,25 +99,37 @@ jobs:
             civo kubernetes create $CLUSTER_NAME --region $REGION --wait --nodes 2 --size g4s.kube.small
           fi
           
-          # Save kubeconfig using civo CLI - try multiple approaches
+          # Save kubeconfig using civo CLI - try multiple approaches with retries
           echo "Saving kubeconfig using civo CLI"
           mkdir -p $HOME/.kube
           
-          # Method 1: Output to stdout and redirect
-          if civo kubernetes config $CLUSTER_NAME > $HOME/.kube/config 2>/dev/null; then
-            echo "Method 1 succeeded: config to stdout"
-          # Method 2: Use --save flag
-          elif civo kubernetes config $CLUSTER_NAME --save 2>/dev/null; then
-            echo "Method 2 succeeded: --save flag"
-          # Method 3: Use --save --merge
-          elif civo kubernetes config $CLUSTER_NAME --save --merge 2>/dev/null; then
-            echo "Method 3 succeeded: --save --merge"
-          else
-            echo "ERROR: All kubeconfig methods failed" >&2
-            echo "Trying to show cluster info for debugging:"
-            civo kubernetes show $CLUSTER_NAME || true
-            exit 1
-          fi
+          # Retry loop
+          for attempt in {1..10}; do
+            echo "Attempt $attempt to get kubeconfig..."
+            
+            # Method 1: Output to stdout and redirect
+            if civo kubernetes config $CLUSTER_NAME > $HOME/.kube/config 2>/dev/null; then
+              echo "Method 1 succeeded: config to stdout"
+              break
+            # Method 2: Use --save flag
+            elif civo kubernetes config $CLUSTER_NAME --save 2>/dev/null; then
+              echo "Method 2 succeeded: --save flag"
+              break
+            # Method 3: Use --save --merge
+            elif civo kubernetes config $CLUSTER_NAME --save --merge 2>/dev/null; then
+              echo "Method 3 succeeded: --save --merge"
+              break
+            else
+              echo "Attempt $attempt failed, retrying in 10 seconds..."
+              sleep 10
+              if [ $attempt -eq 10 ]; then
+                echo "ERROR: All kubeconfig methods failed after 10 attempts" >&2
+                echo "Trying to show cluster info for debugging:"
+                civo kubernetes show $CLUSTER_NAME || true
+                exit 1
+              fi
+            fi
+          done
           
           # Verify kubeconfig was created
           if [ ! -s "$HOME/.kube/config" ]; then
