@@ -30,7 +30,10 @@ export default function Admin({ onSelect }){
         {rows.map(r => (
           <li key={r.id} style={{marginBottom:8}}>
             <strong>{r.patient_name}</strong> — Age: {r.age} — {r.created_at}
-            <button style={{marginLeft:8}} onClick={()=>onSelect(r.id)}>Open</button>
+            <button style={{marginLeft:8}} onClick={()=>{
+              if (typeof onSelect === 'function') onSelect(r.id)
+              else console.error('onSelect is not a function:', onSelect)
+            }}>Open</button>
           </li>
         ))}
       </ul>

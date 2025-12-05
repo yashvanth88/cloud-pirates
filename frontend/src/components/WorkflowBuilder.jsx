@@ -187,12 +187,18 @@ export default function WorkflowBuilder(){
                   <div style={{fontSize: 11, color: '#666'}}>ID: {selectedNode.id}</div>
                 </div>
                 
-                {selectedBlockComponent && (
+                {selectedBlockComponent && typeof selectedBlockComponent === 'function' && (
                   <div style={{marginBottom: 12}}>
                     {React.createElement(selectedBlockComponent, {
                       config: selectedNodeData,
                       onConfig: (newConfig) => updateNodeConfig(selectedNode.id, newConfig)
                     })}
+                  </div>
+                )}
+                
+                {!selectedBlockComponent && (
+                  <div style={{color: '#999', fontSize: 12, padding: 8, background: '#fff', borderRadius: 3}}>
+                    Block component not found
                   </div>
                 )}
                 
