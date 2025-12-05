@@ -34,7 +34,7 @@ spec:
       containers:
         - name: backend
           # Replace the image below with the image you push to your registry
-          image: ghcr.io/yashvanth88/cloud-pirates-backend:latest
+          image: ghcr.io/yashvanth88/cloudpirates-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

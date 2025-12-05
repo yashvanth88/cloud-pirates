@@ -37,7 +37,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:latest
+          tags: ghcr.io/${{ github.repository_owner }}/cloudpirates-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloudpirates-backend:latest
           file: ./backend/Dockerfile
           context: ./backend
           outputs: type=registry
@@ -47,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:latest
+          tags: ghcr.io/${{ github.repository_owner }}/cloudpirates-frontend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloudpirates-frontend:latest
           file: ./frontend/Dockerfile
           context: ./frontend
           outputs: type=registry
@@ -153,8 +153,8 @@ jobs:
 
       - name: Deploy to cluster
         env:
-          BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:${{ github.sha }}
-          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:${{ github.sha }}
+          BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpirates-backend:${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpirates-frontend:${{ github.sha }}
         run: |
           # Deploy MinIO first
           kubectl apply -f k8s/minio-deployment.yaml
