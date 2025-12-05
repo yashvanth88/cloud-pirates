@@ -94,12 +94,15 @@ jobs:
           CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
         run: |
           set -euo pipefail
-          if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
-            echo "Creating cluster $CLUSTER_NAME in region $REGION..."
+          echo "Attempting to get or create cluster $CLUSTER_NAME in region $REGION..."
+          
+          # Try to show the cluster (may fail if it doesn't exist yet or CLI has auth issues)
+          civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1 || {
+            echo "Cluster not found, creating..."
             civo kubernetes create $CLUSTER_NAME --region $REGION --wait --nodes 2 --size g4s.kube.small
-          else
-            echo "Cluster $CLUSTER_NAME already exists"
-          fi
+          }
+          
+          echo "Cluster is ready, now retrieving kubeconfig..."
           
           # Save kubeconfig using civo CLI - try multiple approaches with retries
           echo "Saving kubeconfig using civo CLI"
