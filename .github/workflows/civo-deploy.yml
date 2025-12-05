@@ -86,19 +86,35 @@ jobs:
             civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g4s.kube.small
           fi
           
-          # Save kubeconfig using civo CLI
+          # Save kubeconfig using civo CLI - try multiple approaches
           echo "Saving kubeconfig using civo CLI"
-          civo kubernetes config $CLUSTER_NAME --save --merge=false
+          mkdir -p $HOME/.kube
           
-          # Verify kubeconfig was created
-          if [ -f ~/.kube/config ]; then
-            echo "Successfully saved kubeconfig"
+          # Method 1: Output to stdout and redirect
+          if civo kubernetes config $CLUSTER_NAME > $HOME/.kube/config 2>/dev/null; then
+            echo "Method 1 succeeded: config to stdout"
+          # Method 2: Use --save flag
+          elif civo kubernetes config $CLUSTER_NAME --save 2>/dev/null; then
+            echo "Method 2 succeeded: --save flag"
+          # Method 3: Use --save --merge
+          elif civo kubernetes config $CLUSTER_NAME --save --merge 2>/dev/null; then
+            echo "Method 3 succeeded: --save --merge"
           else
-            echo "ERROR: kubeconfig not found after civo command" >&2
+            echo "ERROR: All kubeconfig methods failed" >&2
+            echo "Trying to show cluster info for debugging:"
+            civo kubernetes show $CLUSTER_NAME || true
             exit 1
           fi
           
-          export KUBECONFIG=$HOME/.kube/config
+          # Verify kubeconfig was created
+          if [ ! -s "$HOME/.kube/config" ]; then
+            echo "ERROR: kubeconfig not found or empty at $HOME/.kube/config" >&2
+            ls -la $HOME/.kube/ || true
+            exit 1
+          fi
+          
+          chmod 600 $HOME/.kube/config
+          echo "Successfully saved kubeconfig"
 
       - name: Configure kubectl
         run: |
