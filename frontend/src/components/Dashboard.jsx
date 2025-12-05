@@ -1,6 +1,6 @@
 import React from 'react'
 
-export default function Dashboard({ emrId, refreshKey = 0 }){
+export default function Dashboard({ emrId, refreshKey = 0, onRefresh }){
   const [data, setData] = React.useState(null)
 
   React.useEffect(()=>{
@@ -43,7 +43,7 @@ export default function Dashboard({ emrId, refreshKey = 0 }){
         if (j2.status && j2.status !== 'running' && j2.status !== 'queued'){
           clearInterval(poll)
           setRunning(false)
-          setRefreshKey(k=>k+1)
+          if (onRefresh) onRefresh()
           alert('Workflow completed: ' + (j2.result && j2.result.status))
         }
       }, 700)

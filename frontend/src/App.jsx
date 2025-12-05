@@ -25,7 +25,7 @@ export default function App(){
             <>
               <ScanUpload emrId={emrId} onUploaded={() => setRefreshKey(k => k + 1)} />
               <hr />
-              <Dashboard emrId={emrId} refreshKey={refreshKey} />
+              <Dashboard emrId={emrId} refreshKey={refreshKey} onRefresh={() => setRefreshKey(k => k + 1)} />
             </>
           )}
         </>
@@ -47,7 +47,7 @@ export default function App(){
           <div style={{marginBottom:8}}><button onClick={()=>setView('create')}>Back</button></div>
           <ScanUpload emrId={emrId} onUploaded={() => setRefreshKey(k => k + 1)} />
           <hr />
-          <Dashboard emrId={emrId} refreshKey={refreshKey} />
+          <Dashboard emrId={emrId} refreshKey={refreshKey} onRefresh={() => setRefreshKey(k => k + 1)} />
         </>
       )}
     </div>
