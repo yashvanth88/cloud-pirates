@@ -1,0 +1,10 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Commit and push workflow fix",
+			"type": "shell",
+			"command": "cd /Users/yashvanth/Desktop/pirates/cloud-pirates && git add .github/workflows/civo-deploy.yml && git commit -m 'ci: use Civo API directly for kubeconfig fetch' && git push"
+		}
+	]
+}

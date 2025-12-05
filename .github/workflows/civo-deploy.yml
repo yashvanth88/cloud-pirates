@@ -13,7 +13,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.build-image.outputs.image }}
+      backend_image: ${{ steps.build-backend.outputs.image }}
+      frontend_image: ${{ steps.build-frontend.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,14 +32,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        id: build-image
+      - name: Build and push backend
+        id: build-backend
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:latest
           file: ./backend/Dockerfile
           context: ./backend
+          outputs: type=registry
+
+      - name: Build and push frontend
+        id: build-frontend
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:latest
+          file: ./frontend/Dockerfile
+          context: ./frontend
           outputs: type=registry
 
   deploy-to-civo:
@@ -142,36 +153,47 @@ jobs:
 
       - name: Deploy to cluster
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-pirates:${{ github.sha }}
+          BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-pirates-backend:${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloud-pirates-frontend:${{ github.sha }}
         run: |
-          # Apply manifests and set the container image for deployments
-          kubectl apply -f k8s/deployment.yaml
-          kubectl set image deployment/cloud-pirates-web web=$IMAGE || true
-          kubectl set image deployment/cloud-pirates-worker worker=$IMAGE || true
-          kubectl apply -f k8s/migrate-job.yaml
+          # Deploy MinIO first
+          kubectl apply -f k8s/minio-deployment.yaml
+          
+          # Deploy backend
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl set image deployment/pirates-backend backend=$BACKEND_IMAGE || true
+          
+          # Deploy frontend
+          kubectl apply -f k8s/frontend-deployment.yaml
+          kubectl set image deployment/pirates-frontend frontend=$FRONTEND_IMAGE || true
+          
+          # Run migrations
+          kubectl apply -f k8s/migrate-job.yaml || true
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/cloud-pirates-web --timeout=120s || true
-          kubectl rollout status deployment/cloud-pirates-worker --timeout=120s || true
+          kubectl rollout status deployment/pirates-frontend --timeout=120s || true
+          kubectl rollout status deployment/pirates-backend --timeout=120s || true
 
       - name: Get service URL
         run: |
           echo "Waiting for LoadBalancer IP..."
           for i in {1..30}; do
-            EXTERNAL_IP=$(kubectl get svc cloud-pirates-web -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            EXTERNAL_IP=$(kubectl get svc pirates-frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
             if [ -n "$EXTERNAL_IP" ] && [ "$EXTERNAL_IP" != "<pending>" ]; then
               echo "=========================================="
               echo "🚀 DEPLOYMENT SUCCESSFUL!"
               echo "=========================================="
               echo "Frontend URL: http://$EXTERNAL_IP"
               echo "=========================================="
-              kubectl get svc cloud-pirates-web
+              kubectl get svc pirates-frontend
+              kubectl get svc pirates-backend || echo "Backend service info not available"
               exit 0
             fi
             echo "Waiting for external IP... (attempt $i/30)"
             sleep 10
           done
           echo "⚠️  Deployment succeeded but external IP not yet assigned"
-          echo "Run: kubectl get svc cloud-pirates-web"
-          kubectl get svc cloud-pirates-web || true
+          echo "Run: kubectl get svc pirates-frontend"
+          kubectl get svc pirates-frontend || true
+          kubectl get svc || true
