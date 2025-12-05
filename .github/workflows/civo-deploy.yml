@@ -150,6 +150,11 @@ jobs:
             --from-literal=SPACES_BUCKET="$SPACES_BUCKET" \
             --from-literal=INFERENCE_URL="$INFERENCE_URL" \
             --from-literal=REDIS_URL="$REDIS_URL" --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Create MinIO credentials secret
+          kubectl create secret generic pirates-minio-credentials \
+            --from-literal=MINIO_ROOT_USER=minioadmin \
+            --from-literal=MINIO_ROOT_PASSWORD=minioadmin123 --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to cluster
         env:

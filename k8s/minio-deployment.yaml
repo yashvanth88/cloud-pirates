@@ -3,7 +3,7 @@
 # - If you have working StorageClass and want persistence, uncomment the PVC
 #   section at the bottom and replace the `emptyDir` volume with the PVC.
 
-<!-- Secret is intentionally excluded here to avoid overwriting cluster secrets. -->
+# Secret is intentionally excluded here to avoid overwriting cluster secrets.
 ---
 apiVersion: v1
 kind: Service
