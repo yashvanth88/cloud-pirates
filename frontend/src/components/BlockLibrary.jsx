@@ -215,7 +215,7 @@ export const NotificationBlock = ({ config, onConfig }) => {
           <input type="checkbox" checked={channels.includes(ch)} onChange={(e) => {
             const newChannels = e.target.checked ? [...channels, ch] : channels.filter(c => c !== ch);
             setChannels(newChannels);
-            onConfig?.({...channels: newChannels});
+            onConfig?.({...config, channels: newChannels});
           }} />
           {ch.replace('_', ' ').toUpperCase()}
         </label>
