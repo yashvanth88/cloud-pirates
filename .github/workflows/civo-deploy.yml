@@ -97,39 +97,48 @@ jobs:
           if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
             echo "Creating cluster $CLUSTER_NAME in region $REGION..."
             civo kubernetes create $CLUSTER_NAME --region $REGION --wait --nodes 2 --size g4s.kube.small
+          else
+            echo "Cluster $CLUSTER_NAME already exists"
           fi
           
           # Save kubeconfig using civo CLI - try multiple approaches with retries
           echo "Saving kubeconfig using civo CLI"
           mkdir -p $HOME/.kube
           
-          # Retry loop
-          for attempt in {1..10}; do
+          # Retry loop for kubeconfig retrieval (sometimes takes time for cluster to be ready)
+          KUBECONFIG_SUCCESS=false
+          for attempt in {1..15}; do
             echo "Attempt $attempt to get kubeconfig..."
             
             # Method 1: Output to stdout and redirect
             if civo kubernetes config $CLUSTER_NAME > $HOME/.kube/config 2>/dev/null; then
               echo "Method 1 succeeded: config to stdout"
+              KUBECONFIG_SUCCESS=true
               break
             # Method 2: Use --save flag
             elif civo kubernetes config $CLUSTER_NAME --save 2>/dev/null; then
               echo "Method 2 succeeded: --save flag"
+              KUBECONFIG_SUCCESS=true
               break
             # Method 3: Use --save --merge
             elif civo kubernetes config $CLUSTER_NAME --save --merge 2>/dev/null; then
               echo "Method 3 succeeded: --save --merge"
+              KUBECONFIG_SUCCESS=true
               break
             else
-              echo "Attempt $attempt failed, retrying in 10 seconds..."
-              sleep 10
-              if [ $attempt -eq 10 ]; then
-                echo "ERROR: All kubeconfig methods failed after 10 attempts" >&2
-                echo "Trying to show cluster info for debugging:"
-                civo kubernetes show $CLUSTER_NAME || true
-                exit 1
+              if [ $attempt -lt 15 ]; then
+                echo "Attempt $attempt failed, retrying in 15 seconds..."
+                sleep 15
               fi
             fi
           done
+          
+          if [ "$KUBECONFIG_SUCCESS" = false ]; then
+            echo "ERROR: All kubeconfig methods failed after 15 attempts" >&2
+            echo "Trying to show cluster info for debugging:"
+            civo kubernetes show $CLUSTER_NAME || true
+            exit 1
+          fi
           
           # Verify kubeconfig was created
           if [ ! -s "$HOME/.kube/config" ]; then
