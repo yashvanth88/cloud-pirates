@@ -89,12 +89,14 @@ jobs:
 
       - name: Ensure Kubernetes cluster
         env:
-          CLUSTER_NAME: cloud-pirates-cluster
+          CLUSTER_NAME: cloud-pirates-cluster-mum1
+          REGION: mum1
           CIVO_API_KEY: ${{ secrets.CIVO_API_KEY }}
         run: |
           set -euo pipefail
           if ! civo kubernetes show $CLUSTER_NAME >/dev/null 2>&1; then
-            civo kubernetes create $CLUSTER_NAME --wait --nodes 2 --size g4s.kube.small
+            echo "Creating cluster $CLUSTER_NAME in region $REGION..."
+            civo kubernetes create $CLUSTER_NAME --region $REGION --wait --nodes 2 --size g4s.kube.small
           fi
           
           # Save kubeconfig using civo CLI - try multiple approaches
