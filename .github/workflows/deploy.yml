@@ -1,0 +1,59 @@
+name: Deploy to Civo Kubernetes
+
+on:
+  workflow_run:
+    workflows: ["Build & Deploy Backend", "Build & Deploy Frontend"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBE_CONFIG_DATA" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Verify kubectl connection
+        run: kubectl cluster-info
+
+      - name: Update backend deployment
+        run: |
+          kubectl set image deployment/pirates-backend \
+            pirates-backend=ghcr.io/yashvanth88/cloudpirates-backend:latest \
+            -n cloud-pirates
+
+      - name: Update frontend deployment
+        run: |
+          kubectl set image deployment/pirates-frontend \
+            pirates-frontend=ghcr.io/yashvanth88/cloudpirates-frontend:latest \
+            -n cloud-pirates
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/pirates-backend -n cloud-pirates --timeout=5m
+          kubectl rollout status deployment/pirates-frontend -n cloud-pirates --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "✅ Deployment completed successfully"
+          echo "Frontend: http://212.2.246.88"
+          echo "Backend: http://212.2.246.88/api"
+
+      - name: Slack notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Cloud Pirates deployment - ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true
