@@ -31,23 +31,23 @@ export default function ScanUpload({ emrId, onUploaded }){
 
   return (
     <div>
-      <h2>Upload Scan</h2>
-      <form onSubmit={upload}>
+      <h2 style={{color:'#e2e8f0'}}>Upload Scan</h2>
+      <form onSubmit={upload} style={{backgroundColor:'#1e293b',padding:'20px',borderRadius:'12px',border:'1px solid #334155'}}>
         <input type="file" accept="image/png,image/jpeg" onChange={e=>{
           const f = e.target.files[0]
           setFile(f)
           if (f) setPreview(URL.createObjectURL(f))
           else setPreview(null)
-        }} />
-        <button type="submit">Upload</button>
+        }} style={{padding:'8px',color:'#e2e8f0',backgroundColor:'#0f172a',border:'1px solid #334155',borderRadius:'6px',marginBottom:'12px'}} />
+        <button type="submit" style={{padding:'10px 20px',backgroundColor:'#0ea5e9',color:'white',border:'none',borderRadius:'6px',cursor:'pointer',fontWeight:'600'}}>Upload</button>
       </form>
       {preview && (
         <div style={{marginTop:8}}>
-          <div>Preview:</div>
-          <img src={preview} alt="preview" style={{maxWidth:200,marginTop:6,border:'1px solid #ddd'}} />
+          <div style={{color:'#e2e8f0'}}>Preview:</div>
+          <img src={preview} alt="preview" style={{maxWidth:200,marginTop:6,border:'1px solid #334155',borderRadius:'8px'}} />
         </div>
       )}
-      <div style={{marginTop:8}}>{status}</div>
+      <div style={{marginTop:8,color:'#94a3b8'}}>{status}</div>
     </div>
   )
 }

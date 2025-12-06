@@ -15,6 +15,20 @@ export default function WorkflowBuilder(){
   const [saveName, setSaveName] = useState('Untitled')
   const [selectedNode, setSelectedNode] = useState(null)
   const [selectedNodeData, setSelectedNodeData] = useState(null)
+  const [blockConfigs, setBlockConfigs] = useState({})
+
+  const updateBlockConfig = (nodeId, configKey, configValue) => {
+    setBlockConfigs(prev => ({
+      ...prev,
+      [nodeId]: { ...(prev[nodeId] || {}), [configKey]: configValue }
+    }))
+    // Also update the node's config
+    setNodes(ns => ns.map(n => 
+      n.id === nodeId 
+        ? { ...n, data: { ...n.data, config: { ...(n.data.config || {}), [configKey]: configValue } } }
+        : n
+    ))
+  }
 
   const onConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, id: `e-${Date.now()}` }, eds)), [setEdges])
 
@@ -48,7 +62,7 @@ export default function WorkflowBuilder(){
     let parsed
     try { parsed = JSON.parse(data) } catch(e) { parsed = { id: data, label: data } }
 
-    const position = rfInstance.project({ x: event.clientX - reactFlowBounds.left, y: event.clientY - reactFlowBounds.top })
+    const position = rfInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
     const id = `${parsed.id || 'node'}_${Date.now()}`
     const node = {
       id,
@@ -110,7 +124,17 @@ export default function WorkflowBuilder(){
       if (typeof p === 'string') {
         try { p = JSON.parse(p) } catch(e) { /* ignore */ }
       }
-      setNodes(p.nodes || [])
+      
+      // Ensure all nodes have valid positions
+      const validatedNodes = (p.nodes || []).map((node, idx) => ({
+        ...node,
+        position: node.position && node.position.x !== undefined && node.position.y !== undefined 
+          ? node.position 
+          : { x: 100 + (idx * 150), y: 50 + (idx * 100) },
+        data: node.data || { label: 'Block', type: 'unknown', config: {} }
+      }))
+      
+      setNodes(validatedNodes)
       setEdges(p.edges || [])
       setLastSavedId(id)
     }).catch((e) => { console.error(e); alert('Load failed') })
@@ -130,22 +154,22 @@ export default function WorkflowBuilder(){
     BLOCK_LIBRARY.find(b => b.id === selectedNode.data.type)?.component : null
 
   return (
-    <div style={{ display:'flex', height:'80vh', border:'1px solid #eee' }}>
+    <div style={{ display:'flex', height:'80vh', border:'1px solid #334155', backgroundColor:'#0f172a' }}>
       {/* Palette */}
-      <div style={{ width:220, padding:12, borderRight:'1px solid #eee', background:'#fafafa', overflow: 'auto' }}>
-        <h3 style={{marginTop:0}}>Block Palette</h3>
+      <div style={{ width:220, padding:12, borderRight:'1px solid #334155', background:'#1e293b', overflow: 'auto' }}>
+        <h3 style={{marginTop:0,color:'#e2e8f0'}}>Block Palette</h3>
         {BLOCK_LIBRARY.map(block => (
           <div key={block.id} style={{marginBottom:8}}>
             <div
               draggable
               onDragStart={(e)=>{ e.dataTransfer.setData('application/reactflow', JSON.stringify(block)); e.dataTransfer.effectAllowed='move' }}
             >
-              <button onClick={()=>addNode(block)} style={{width:'100%', fontSize: 12}}>{block.label}</button>
+              <button onClick={()=>addNode(block)} style={{width:'100%', fontSize: 12, backgroundColor:'#334155', color:'#e2e8f0', border:'1px solid #475569', borderRadius:'4px', padding:'8px', cursor:'pointer'}}>{block.label}</button>
             </div>
           </div>
         ))}
         <div style={{marginTop:18}}>
-          <button onClick={exportGraph} style={{width:'100%', fontSize: 12, fontWeight: 'bold'}}>Save Workflow</button>
+          <button onClick={exportGraph} style={{width:'100%', fontSize: 12, fontWeight: 'bold', backgroundColor:'#0ea5e9', color:'white', border:'none', borderRadius:'4px', padding:'8px', cursor:'pointer'}}>Save Workflow</button>
         </div>
       </div>
 
@@ -173,32 +197,188 @@ export default function WorkflowBuilder(){
           </div>
 
           {/* Configuration Panel */}
-          <div style={{ width:320, padding:12, borderLeft:'1px solid #eee', background:'#fafafa', overflow: 'auto' }}>
-            <h3 style={{marginTop:0}}>Configuration</h3>
+          <div style={{ width:320, padding:12, borderLeft:'1px solid #334155', background:'#1e293b', overflow: 'auto', color:'#e2e8f0' }}>
+            <h3 style={{marginTop:0, color:'#0ea5e9'}}>⚙️ Block Configuration</h3>
             
             {!selectedNode && (
-              <div style={{color: '#999', fontSize: 12}}>Click on a block to configure</div>
+              <div style={{color: '#94a3b8', fontSize: 12}}>Click on a block to configure</div>
             )}
             
             {selectedNode && (
               <>
-                <div style={{marginBottom: 12, padding: 10, background: '#fff', borderRadius: 4, border: '1px solid #ddd'}}>
-                  <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 4}}>{selectedNode.data.label}</div>
-                  <div style={{fontSize: 11, color: '#666'}}>ID: {selectedNode.id}</div>
+                <div style={{marginBottom: 12, padding: 10, background: '#0f172a', borderRadius: 4, border: '1px solid #334155'}}>
+                  <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 4, color:'#0ea5e9'}}>{selectedNode.data.label}</div>
+                  <div style={{fontSize: 11, color: '#64748b'}}>Block ID: {selectedNode.id}</div>
                 </div>
-                
-                {selectedBlockComponent && typeof selectedBlockComponent === 'function' && (
-                  <div style={{marginBottom: 12}}>
-                    {React.createElement(selectedBlockComponent, {
-                      config: selectedNodeData,
-                      onConfig: (newConfig) => updateNodeConfig(selectedNode.id, newConfig)
-                    })}
+
+                {/* Notification Block Config */}
+                {selectedNode.data.type === 'notify' && (
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📧 Email Recipients</label>
+                      <input 
+                        type="text" 
+                        placeholder="doctor@hospital.com, admin@hospital.com"
+                        value={blockConfigs[selectedNode.id]?.email_recipients || ''}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'email_recipients', e.target.value)}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      />
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📱 SMS Recipients</label>
+                      <input 
+                        type="text" 
+                        placeholder="+1234567890, +0987654321"
+                        value={blockConfigs[selectedNode.id]?.sms_recipients || ''}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'sms_recipients', e.target.value)}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      />
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>🚨 Priority</label>
+                      <select 
+                        value={blockConfigs[selectedNode.id]?.priority || 'normal'}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'priority', e.target.value)}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      >
+                        <option value="low">Low</option>
+                        <option value="normal">Normal</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical 🚑</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📨 Channels</label>
+                      <div style={{marginTop:4,display:'flex',gap:8}}>
+                        <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}>
+                          <input 
+                            type="checkbox" 
+                            checked={(blockConfigs[selectedNode.id]?.channels || []).includes('email')}
+                            onChange={(e) => {
+                              const channels = blockConfigs[selectedNode.id]?.channels || [];
+                              if (e.target.checked) {
+                                updateBlockConfig(selectedNode.id, 'channels', [...channels, 'email']);
+                              } else {
+                                updateBlockConfig(selectedNode.id, 'channels', channels.filter(c => c !== 'email'));
+                              }
+                            }}
+                          />
+                          <span>Email</span>
+                        </label>
+                        <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}>
+                          <input 
+                            type="checkbox" 
+                            checked={(blockConfigs[selectedNode.id]?.channels || []).includes('sms')}
+                            onChange={(e) => {
+                              const channels = blockConfigs[selectedNode.id]?.channels || [];
+                              if (e.target.checked) {
+                                updateBlockConfig(selectedNode.id, 'channels', [...channels, 'sms']);
+                              } else {
+                                updateBlockConfig(selectedNode.id, 'channels', channels.filter(c => c !== 'sms'));
+                              }
+                            }}
+                          />
+                          <span>SMS</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 )}
-                
-                {!selectedBlockComponent && (
-                  <div style={{color: '#999', fontSize: 12, padding: 8, background: '#fff', borderRadius: 3}}>
-                    Block component not found
+
+                {/* Billing Block Config */}
+                {selectedNode.data.type === 'billing' && (
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>💳 Line Items</label>
+                      <textarea 
+                        placeholder="consultation&#10;imaging&#10;medication&#10;lab work"
+                        value={blockConfigs[selectedNode.id]?.line_items_text || ''}
+                        onChange={(e) => {
+                          const items = e.target.value.split('\n').filter(item => item.trim());
+                          updateBlockConfig(selectedNode.id, 'line_items', items);
+                          updateBlockConfig(selectedNode.id, 'line_items_text', e.target.value);
+                        }}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12,minHeight:80,fontFamily:'monospace'}}
+                      />
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📊 Tax Rate %</label>
+                      <input 
+                        type="number" 
+                        placeholder="10"
+                        value={blockConfigs[selectedNode.id]?.tax_rate || '10'}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'tax_rate', parseFloat(e.target.value))}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Block Config */}
+                {selectedNode.data.type === 'ai' && (
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>🤖 Model</label>
+                      <select 
+                        value={blockConfigs[selectedNode.id]?.model_name || 'ResNet50'}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'model_name', e.target.value)}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      >
+                        <option>ResNet50</option>
+                        <option>VGG16</option>
+                        <option>MobileNet</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>✅ Confidence Threshold</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="1" 
+                        step="0.1"
+                        placeholder="0.7"
+                        value={blockConfigs[selectedNode.id]?.confidence_threshold || '0.7'}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'confidence_threshold', parseFloat(e.target.value))}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Graph Block Config */}
+                {selectedNode.data.type === 'graph' && (
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📈 Chart Type</label>
+                      <select 
+                        value={blockConfigs[selectedNode.id]?.chart_type || 'line'}
+                        onChange={(e) => updateBlockConfig(selectedNode.id, 'chart_type', e.target.value)}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12}}
+                      >
+                        <option value="line">Line Chart</option>
+                        <option value="bar">Bar Chart</option>
+                        <option value="pie">Pie Chart</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:600,color:'#0ea5e9'}}>📊 Metrics</label>
+                      <textarea 
+                        placeholder="total_cost&#10;patient_load&#10;resources_used"
+                        value={blockConfigs[selectedNode.id]?.metrics_text || ''}
+                        onChange={(e) => {
+                          const metrics = e.target.value.split('\n').filter(m => m.trim());
+                          updateBlockConfig(selectedNode.id, 'metrics', metrics);
+                          updateBlockConfig(selectedNode.id, 'metrics_text', e.target.value);
+                        }}
+                        style={{width:'100%',padding:8,marginTop:4,background:'#0f172a',border:'1px solid #334155',borderRadius:4,color:'#e2e8f0',fontSize:12,minHeight:80,fontFamily:'monospace'}}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {!['notify', 'billing', 'ai', 'graph'].includes(selectedNode.data.type) && (
+                  <div style={{color: '#64748b', fontSize: 12, padding: 8, background: '#0f172a', borderRadius: 4, border: '1px solid #334155'}}>
+                    ℹ️ This block uses default settings
                   </div>
                 )}
                 
@@ -208,9 +388,9 @@ export default function WorkflowBuilder(){
                     setSelectedNode(null)
                     setSelectedNodeData(null)
                   }}
-                  style={{width: '100%', marginTop: 8, padding: 8, background: '#ff6b6b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer'}}
+                  style={{width: '100%', marginTop: 12, padding: 8, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize:12, fontWeight:600}}
                 >
-                  Delete Block
+                  🗑️ Delete Block
                 </button>
               </>
             )}

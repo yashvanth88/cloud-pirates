@@ -40,3 +40,15 @@ CREATE TABLE IF NOT EXISTS executions (
   result JSONB,
   created_at TIMESTAMP DEFAULT now()
 );
+
+-- Email logs: track all notifications sent
+CREATE TABLE IF NOT EXISTS email_logs (
+  id SERIAL PRIMARY KEY,
+  execution_id INT REFERENCES executions(id) ON DELETE CASCADE,
+  recipient TEXT NOT NULL,
+  subject TEXT,
+  status TEXT DEFAULT 'pending',
+  error_message TEXT,
+  sent_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT now()
+);

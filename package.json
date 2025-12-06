@@ -1,0 +1,33 @@
+{
+  "name": "cloud-pirates-hospital",
+  "version": "1.0.0",
+  "description": "Hospital Cloud Management Platform with CLI for non-technical staff",
+  "main": "hospital-cli.js",
+  "bin": {
+    "hospital-cli": "./hospital-cli.js"
+  },
+  "scripts": {
+    "backend": "cd backend && npm start",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm run dev",
+    "cli": "node hospital-cli.js",
+    "cli:install": "npm link",
+    "deploy": "bash deploy-clean.sh",
+    "deploy:mum1": "bash deploy-mum1.sh",
+    "health": "bash health-check.sh",
+    "logs": "node hospital-cli.js logs",
+    "status": "node hospital-cli.js status"
+  },
+  "keywords": [
+    "hospital",
+    "healthcare",
+    "cloud",
+    "kubernetes",
+    "cli"
+  ],
+  "author": "Cloud Pirates",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

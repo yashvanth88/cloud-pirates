@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pirates-backend
+  namespace: cloud-pirates
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pirates-backend
+  template:
+    metadata:
+      labels:
+        app: pirates-backend
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: backend
+          image: ghcr.io/yashvanth88/cloudpirates-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: backend-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: backend-code-vol
+              mountPath: /app/index.js
+              subPath: index.js
+      volumes:
+        - name: backend-code-vol
+          configMap:
+            name: backend-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pirates-backend
+  namespace: cloud-pirates
+spec:
+  type: ClusterIP
+  selector:
+    app: pirates-backend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
